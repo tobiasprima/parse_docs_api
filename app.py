@@ -1,16 +1,22 @@
+from typing import Any, Dict
 from fastapi import FastAPI, UploadFile, File, HTTPException
 from dotenv import load_dotenv
-import httpx
 import os
 import io
 import docx
+import httpx
+import logging
+import traceback
+
 
 load_dotenv()
 
+LOG = logging.getLogger("parse_docs_api")
+logging.basicConfig(level=logging.INFO)
+
+
 MAX_FILE_SIZE = 2 * 1024 * 1024
 MCP_URL = os.getenv("MCP_URL")
-if not MCP_URL:
-    raise RuntimeError("MCP_URL environment variable is not set")
 
 app = FastAPI()
 
@@ -33,11 +39,12 @@ async def upload_resume(file: UploadFile = File(...)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to read file: {str(e)}")
 
-    async with httpx.AsyncClient() as client:
-        response = await client.post(MCP_URL, json={"raw_text": text})
-
-    if response.status_code != 200:
-        raise HTTPException(status_code=502, detail="MCP failed to process resume")
+    try:
+        async with httpx.AsyncClient() as client:
+            response = await client.post(MCP_URL, json={"raw_text": text})
+    except Exception as e:
+        LOG.error("MCP client call failed — full traceback:\n%s", traceback.format_exc())
+        raise HTTPException(status_code=502, detail=f"MCP call failed: {e}")
 
     return {
         "filename": file.filename,
